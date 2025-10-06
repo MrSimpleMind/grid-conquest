@@ -1,7 +1,8 @@
 {
   "name": "Grid Conquest",
   "short_name": "GridConquest",
-  "start_url": ".",
+  "start_url": "/grid-conquest/",
+  "scope": "/grid-conquest/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#1d4ed8",
