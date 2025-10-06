@@ -6,38 +6,19 @@ import { VictoryBanner } from "./components/VictoryBanner";
 import { useGamePersistence } from "./hooks/useGamePersistence";
 import { useGameStore } from "./state/gameStore";
 
-function useGameSelectors() {
-  return useGameStore((state) => ({
-    gridSize: state.gridSize,
-    cells: state.cells,
-    currentTurn: state.currentTurn,
-    stats: state.stats,
-    turnNumber: state.turnNumber,
-    majorityOwner: state.majorityOwner,
-    majorityStreak: state.majorityStreak,
-    status: state.status,
-    lastAction: state.lastAction,
-    selectedCellId: state.selectedCellId,
-    isHydrated: state.isHydrated,
-    actions: state.actions,
-  }));
-}
-
 export default function App() {
-  const {
-    gridSize,
-    cells,
-    currentTurn,
-    stats,
-    turnNumber,
-    majorityOwner,
-    majorityStreak,
-    status,
-    lastAction,
-    selectedCellId,
-    isHydrated,
-    actions,
-  } = useGameSelectors();
+  const gridSize = useGameStore((state) => state.gridSize);
+  const cells = useGameStore((state) => state.cells);
+  const currentTurn = useGameStore((state) => state.currentTurn);
+  const stats = useGameStore((state) => state.stats);
+  const turnNumber = useGameStore((state) => state.turnNumber);
+  const majorityOwner = useGameStore((state) => state.majorityOwner);
+  const majorityStreak = useGameStore((state) => state.majorityStreak);
+  const status = useGameStore((state) => state.status);
+  const lastAction = useGameStore((state) => state.lastAction);
+  const selectedCellId = useGameStore((state) => state.selectedCellId);
+  const isHydrated = useGameStore((state) => state.isHydrated);
+  const actions = useGameStore((state) => state.actions);
 
   useGamePersistence();
 
