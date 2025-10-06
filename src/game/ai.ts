@@ -1,5 +1,5 @@
 import { Cell, LastAction } from "../types";
-import { getNeighbors, getCellIndex } from "./utils";
+import { canReachWithinMovement, getNeighbors, getCellIndex } from "./utils";
 
 const MIN_UNITS_TO_MOVE = 2;
 
@@ -77,9 +77,7 @@ export function runAiTurn(cells: Cell[]): {
       .filter((neighbor) => neighbor.owner === "player")
       .forEach((enemy) => {
         aiCells
-          .filter((candidate) =>
-            getNeighbors(cells, candidate).some((adj) => adj.id === enemy.id)
-          )
+          .filter((candidate) => canReachWithinMovement(cells, candidate, enemy, "ai"))
           .forEach((candidate) => {
             options.push({ from: candidate, to: enemy, priority: 3 });
           });
@@ -88,33 +86,39 @@ export function runAiTurn(cells: Cell[]): {
 
   if (!options.length) {
     aiCells.forEach((cell) => {
-      const neighbors = getNeighbors(cells, cell);
-      neighbors
-        .filter((neighbor) => neighbor.type === "resource" && neighbor.owner !== "ai")
+      cells
+        .filter((candidate) => candidate.id !== cell.id)
+        .filter((candidate) => candidate.type === "resource" && candidate.owner !== "ai")
         .forEach((resource) => {
-          options.push({ from: cell, to: resource, priority: 2 });
+          if (canReachWithinMovement(cells, cell, resource, "ai")) {
+            options.push({ from: cell, to: resource, priority: 2 });
+          }
         });
     });
   }
 
   if (!options.length) {
     aiCells.forEach((cell) => {
-      const neighbors = getNeighbors(cells, cell);
-      neighbors
-        .filter((neighbor) => neighbor.owner === "player" || neighbor.type === "base")
+      cells
+        .filter((candidate) => candidate.id !== cell.id)
+        .filter((candidate) => candidate.owner === "player" || candidate.type === "base")
         .forEach((enemy) => {
-          options.push({ from: cell, to: enemy, priority: 1 });
+          if (canReachWithinMovement(cells, cell, enemy, "ai")) {
+            options.push({ from: cell, to: enemy, priority: 1 });
+          }
         });
     });
   }
 
   if (!options.length) {
     aiCells.forEach((cell) => {
-      const neighbors = getNeighbors(cells, cell);
-      neighbors
-        .filter((neighbor) => !neighbor.owner)
+      cells
+        .filter((candidate) => candidate.id !== cell.id)
+        .filter((candidate) => !candidate.owner)
         .forEach((neutral) => {
-          options.push({ from: cell, to: neutral, priority: 0 });
+          if (canReachWithinMovement(cells, cell, neutral, "ai")) {
+            options.push({ from: cell, to: neutral, priority: 0 });
+          }
         });
     });
   }
