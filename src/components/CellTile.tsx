@@ -4,6 +4,9 @@ import { Cell, LastAction } from "../types";
 interface CellTileProps {
   cell: Cell;
   isSelected: boolean;
+  isReachable: boolean;
+  isDimmed: boolean;
+  showMovementOverlay: boolean;
   lastAction?: LastAction;
   onClick: () => void;
 }
@@ -14,7 +17,15 @@ const typeIcon: Record<Cell["type"], string> = {
   neutral: "",
 };
 
-export function CellTile({ cell, isSelected, lastAction, onClick }: CellTileProps) {
+export function CellTile({
+  cell,
+  isSelected,
+  isReachable,
+  isDimmed,
+  showMovementOverlay,
+  lastAction,
+  onClick,
+}: CellTileProps) {
   const ownerClass = {
     player: "bg-gradient-to-br from-player-light/80 to-player-dark/70 border-player-light/60",
     ai: "bg-gradient-to-br from-ai-light/80 to-ai-dark/70 border-ai-light/60",
@@ -33,6 +44,12 @@ export function CellTile({ cell, isSelected, lastAction, onClick }: CellTileProp
       : "Neutrale";
   const icon = typeIcon[cell.type];
 
+  const overlayClass = showMovementOverlay
+    ? isSelected || isReachable
+      ? "after:absolute after:inset-0 after:bg-amber-200/20 after:mix-blend-screen after:opacity-100 after:pointer-events-none"
+      : "after:absolute after:inset-0 after:bg-slate-950/70 after:pointer-events-none"
+    : "";
+
   return (
     <button
       onClick={onClick}
@@ -42,6 +59,8 @@ export function CellTile({ cell, isSelected, lastAction, onClick }: CellTileProp
         conquered && "animate-conquer",
         origin && "animate-pulseGlow",
         isSelected && "ring-4 ring-amber-300",
+        showMovementOverlay && isDimmed && "brightness-50",
+        overlayClass,
         cell.owner === "player"
           ? "hover:-translate-y-0.5"
           : "hover:scale-[0.99]"
