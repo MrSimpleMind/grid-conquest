@@ -12,7 +12,7 @@ interface GameGridProps {
 export function GameGrid({ cells, gridSize, selectedCellId, lastAction, onCellClick }: GameGridProps) {
   return (
     <div
-      className="grid w-full max-w-4xl gap-2 rounded-2xl bg-slate-900/60 p-3 shadow-lg backdrop-blur"
+      className="grid w-full max-w-4xl gap-1.5 rounded-2xl bg-slate-900/60 p-2 shadow-lg backdrop-blur sm:gap-2 sm:p-3"
       style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}
     >
       {cells.map((cell) => (
