@@ -2,9 +2,9 @@ import { create } from "zustand";
 import { generateMap } from "../game/mapGenerator";
 import { runAiTurn } from "../game/ai";
 import {
-  areNeighbors,
   calculateStats,
   determineMajorityOwner,
+  findMovementPath,
   getCell,
   getCellIndex,
 } from "../game/utils";
@@ -70,11 +70,17 @@ function performMove(
   const fromCell = getCell(cells, fromId);
   const toCell = getCell(cells, toId);
 
-  if (!fromCell || !toCell || !areNeighbors(fromCell, toCell)) {
+  if (!fromCell || !toCell) {
     return { cells, lastAction: undefined };
   }
 
   if (fromCell.owner !== player || fromCell.units < 2) {
+    return { cells, lastAction: undefined };
+  }
+
+  const path = findMovementPath(cells, fromCell, toCell, player, 3);
+
+  if (!path) {
     return { cells, lastAction: undefined };
   }
 

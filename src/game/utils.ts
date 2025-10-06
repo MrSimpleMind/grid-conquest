@@ -27,6 +27,62 @@ export function areNeighbors(a: Cell, b: Cell): boolean {
   return distance === 1;
 }
 
+export function findMovementPath(
+  cells: Cell[],
+  from: Cell,
+  to: Cell,
+  player: Player,
+  maxSteps = 3
+): Cell[] | null {
+  if (from.id === to.id) {
+    return null;
+  }
+
+  const visited = new Set<string>([from.id]);
+  const queue: { cell: Cell; path: Cell[] }[] = [{ cell: from, path: [from] }];
+
+  while (queue.length > 0) {
+    const { cell, path } = queue.shift()!;
+    const steps = path.length - 1;
+
+    if (steps >= maxSteps) {
+      continue;
+    }
+
+    for (const neighbor of getNeighbors(cells, cell)) {
+      if (visited.has(neighbor.id)) {
+        continue;
+      }
+
+      const nextSteps = steps + 1;
+      if (nextSteps > maxSteps) {
+        continue;
+      }
+
+      if (neighbor.id === to.id) {
+        return [...path, neighbor];
+      }
+
+      if (neighbor.owner === player) {
+        visited.add(neighbor.id);
+        queue.push({ cell: neighbor, path: [...path, neighbor] });
+      }
+    }
+  }
+
+  return null;
+}
+
+export function canReachWithinMovement(
+  cells: Cell[],
+  from: Cell,
+  to: Cell,
+  player: Player,
+  maxSteps = 3
+): boolean {
+  return Boolean(findMovementPath(cells, from, to, player, maxSteps));
+}
+
 export function calculateStats(cells: Cell[]): GameStats {
   const baseTotals: Record<Player, number> = { player: 0, ai: 0 };
   const resourceTotals: Record<Player, number> = { player: 0, ai: 0 };
