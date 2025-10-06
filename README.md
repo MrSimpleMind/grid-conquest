@@ -35,9 +35,13 @@ npm run preview
 
 ## Distribuzione su GitHub Pages
 
+La repository include un workflow GitHub Actions (`Deploy to GitHub Pages`) che, a ogni push sul branch `main`, installa le dipendenze, esegue `npm run build` e pubblica automaticamente il contenuto della cartella `dist/` su GitHub Pages. È comunque possibile avviare manualmente il workflow dalla sezione "Actions" della repository.
+
+Se preferisci un deploy manuale:
+
 1. Esegui `npm run build`.
 2. Pubblica il contenuto della cartella `dist/` sul branch GitHub Pages (ad esempio `gh-pages`).
-3. Assicurati che la repository utilizzi il percorso `/` oppure configura Pages per servire dal root della build; la configurazione Vite utilizza `base: './'` per garantire percorsi relativi compatibili.
+3. Assicurati che la repository utilizzi il percorso `/grid-conquest/` su Pages; la configurazione Vite con `base: './'` genera percorsi relativi compatibili con il progetto.
 
 ## Struttura principale del progetto
 
