@@ -35,7 +35,6 @@ const specializationInfo = {
   },
 } as const;
 
-export function CellTile({ cell, isSelected, lastAction, onClick }: CellTileProps) {
 export function CellTile({
   cell,
   isSelected,
