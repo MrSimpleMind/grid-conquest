@@ -1,4 +1,5 @@
 import clsx from "classnames";
+import { useMemo } from "react";
 import { Cell, LastAction } from "../types";
 
 interface CellTileProps {
@@ -35,6 +36,50 @@ const specializationInfo = {
   },
 } as const;
 
+const terrainTextures: ReadonlyArray<ReadonlyArray<string>> = [
+  [
+    "radial-gradient(circle at 18% 22%, rgba(226, 232, 240, 0.16) 0, rgba(226, 232, 240, 0) 55%)",
+    "radial-gradient(circle at 82% 28%, rgba(59, 130, 246, 0.1) 0, rgba(59, 130, 246, 0) 52%)",
+    "linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.92) 52%, rgba(15, 23, 42, 0.98) 100%)",
+  ],
+  [
+    "radial-gradient(circle at 20% 80%, rgba(248, 250, 252, 0.12) 0, rgba(248, 250, 252, 0) 50%)",
+    "radial-gradient(circle at 75% 20%, rgba(45, 212, 191, 0.12) 0, rgba(45, 212, 191, 0) 47%)",
+    "linear-gradient(165deg, rgba(12, 10, 25, 0.95) 0%, rgba(30, 27, 75, 0.88) 48%, rgba(15, 23, 42, 0.96) 100%)",
+  ],
+  [
+    "radial-gradient(circle at 30% 30%, rgba(148, 163, 184, 0.18) 0, rgba(148, 163, 184, 0) 45%)",
+    "radial-gradient(circle at 70% 70%, rgba(96, 165, 250, 0.12) 0, rgba(96, 165, 250, 0) 55%)",
+    "linear-gradient(150deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.85) 60%, rgba(15, 23, 42, 0.95) 100%)",
+  ],
+  [
+    "radial-gradient(circle at 65% 25%, rgba(253, 224, 71, 0.12) 0, rgba(253, 224, 71, 0) 40%)",
+    "radial-gradient(circle at 25% 70%, rgba(248, 113, 113, 0.12) 0, rgba(248, 113, 113, 0) 50%)",
+    "linear-gradient(140deg, rgba(67, 20, 7, 0.88) 0%, rgba(88, 28, 135, 0.82) 50%, rgba(15, 23, 42, 0.95) 100%)",
+  ],
+  [
+    "radial-gradient(circle at 15% 50%, rgba(248, 250, 252, 0.1) 0, rgba(248, 250, 252, 0) 48%)",
+    "radial-gradient(circle at 88% 60%, rgba(129, 140, 248, 0.15) 0, rgba(129, 140, 248, 0) 55%)",
+    "linear-gradient(175deg, rgba(30, 64, 175, 0.85) 0%, rgba(30, 64, 175, 0.76) 40%, rgba(30, 58, 138, 0.92) 100%)",
+  ],
+];
+
+const ownerOverlays = {
+  player: {
+    border: "border-player-light/70",
+    gradient: "linear-gradient(135deg, rgba(226, 232, 255, 0.18), rgba(59, 130, 246, 0.15))",
+  },
+  ai: {
+    border: "border-ai-light/70",
+    gradient: "linear-gradient(135deg, rgba(248, 113, 113, 0.15), rgba(239, 68, 68, 0.25))",
+  },
+  null: {
+    border: "border-slate-600/60",
+    gradient: "linear-gradient(135deg, rgba(148, 163, 184, 0.08), rgba(30, 41, 59, 0.22))",
+  },
+} satisfies Record<"player" | "ai" | "null", { border: string; gradient: string | null }>;
+type OwnerVisualKey = keyof typeof ownerOverlays;
+
 function buildTooltip(cell: Cell): string | undefined {
   if (!cell.battalions.length) {
     return undefined;
@@ -57,11 +102,22 @@ export function CellTile({
   lastAction,
   onClick,
 }: CellTileProps) {
-  const ownerClass = {
-    player: "bg-gradient-to-br from-player-light/80 to-player-dark/70 border-player-light/60",
-    ai: "bg-gradient-to-br from-ai-light/80 to-ai-dark/70 border-ai-light/60",
-    null: "bg-gradient-to-br from-neutral-light/30 to-neutral-dark/30 border-slate-500/40",
-  }[cell.owner ?? "null"];
+  const ownerKey = (cell.owner ?? "null") as OwnerVisualKey;
+  const ownerStyle = ownerOverlays[ownerKey];
+  const backgroundTextureLayers = useMemo(
+    () => terrainTextures[Math.floor(Math.random() * terrainTextures.length)],
+    []
+  );
+  const backgroundLayers = useMemo(() => {
+    const layers = [...backgroundTextureLayers];
+    if (ownerStyle.gradient) {
+      layers.push(ownerStyle.gradient);
+    }
+    return layers.join(", ");
+  }, [backgroundTextureLayers, ownerStyle.gradient]);
+  const layerCount = backgroundTextureLayers.length + (ownerStyle.gradient ? 1 : 0);
+  const backgroundSize = Array(layerCount).fill("cover").join(", ");
+  const backgroundRepeat = Array(layerCount).fill("no-repeat").join(", ");
 
   const conquered = lastAction?.toId === cell.id;
   const origin = lastAction?.fromId === cell.id;
@@ -101,8 +157,8 @@ export function CellTile({
     <button
       onClick={onClick}
       className={clsx(
-        "relative aspect-square overflow-hidden rounded-xl border backdrop-blur-sm transition-transform duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300",
-        ownerClass,
+        "relative aspect-square overflow-hidden rounded-none border bg-cover bg-center bg-no-repeat backdrop-blur-[1px] transition-transform duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300",
+        ownerStyle.border,
         conquered && "animate-conquer",
         origin && "animate-pulseGlow",
         isSelected && "ring-4 ring-amber-300",
@@ -110,6 +166,12 @@ export function CellTile({
         overlayClass,
         cell.owner === "player" ? "hover:-translate-y-0.5" : "hover:scale-[0.99]"
       )}
+      style={{
+        backgroundImage: backgroundLayers,
+        backgroundSize,
+        backgroundPosition: "center",
+        backgroundRepeat,
+      }}
       title={title || undefined}
     >
       {icon && (
