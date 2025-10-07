@@ -33,7 +33,9 @@ function calculatePower(units: Battalion[], mode: "attack" | "defense"): number 
 
 function cleanupOwner(cell: Cell) {
   if (cell.battalions.length === 0) {
-    cell.owner = null;
+    if (cell.type !== "base") {
+      cell.owner = null;
+    }
   } else {
     cell.owner = cell.battalions[0].owner;
   }
