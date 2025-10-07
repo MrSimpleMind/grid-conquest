@@ -4,9 +4,17 @@ export type CellType = "neutral" | "base" | "resource";
 
 export type BaseSpecialization = "barracks" | "forge" | "sanctuary" | null;
 
-export interface SpecialUnitCounts {
-  elite: number;
-  guardian: number;
+export type UnitType = "infantry" | "vanguard" | "guardian" | "artillery";
+
+export interface Battalion {
+  id: string;
+  owner: Player;
+  type: UnitType;
+  soldiers: number;
+  attack: number;
+  defense: number;
+  maxMovement: number;
+  movementLeft: number;
 }
 
 export interface Cell {
@@ -15,9 +23,9 @@ export interface Cell {
   y: number;
   type: CellType;
   owner: Owner;
-  units: number;
   specialization: BaseSpecialization;
-  specialUnits: SpecialUnitCounts;
+  battalions: Battalion[];
+  resourceClaimedBy: Partial<Record<Player, boolean>>;
 }
 
 export interface GameStats {
@@ -30,6 +38,8 @@ export interface LastAction {
   toId: string;
   conqueredOwner: Owner;
   timestamp: number;
+  fortune: number;
+  resourceReward?: number;
 }
 
 export interface GameSnapshot {
@@ -41,6 +51,7 @@ export interface GameSnapshot {
   majorityStreak: number;
   status: GameStatus;
   lastAction?: LastAction;
+  resources: Record<Player, number>;
 }
 
 export type GameStatus =

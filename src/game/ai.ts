@@ -1,125 +1,72 @@
 import { Cell, LastAction, Player } from "../types";
-import { performMove, previewAttackPower, previewDefensePower } from "./performMove";
-import { canReachWithinMovement, getNeighbors } from "./utils";
+import { getNeighbors } from "./utils";
+import { performMove } from "./performMove";
+import { UNIT_BLUEPRINTS, createBattalion } from "./units";
 
-const MIN_UNITS_TO_MOVE = 2;
-
-interface AttackOption {
-  from: Cell;
-  to: Cell;
-  priority: number;
+function cloneCells(cells: Cell[]): Cell[] {
+  return cells.map((cell) => ({
+    ...cell,
+    battalions: cell.battalions.map((unit) => ({ ...unit })),
+    resourceClaimedBy: { ...cell.resourceClaimedBy },
+  }));
 }
 
-function totalUnitsForOwner(cells: Cell[], owner: Player): number {
-  return cells
-    .filter((cell) => cell.owner === owner)
-    .reduce((sum, cell) => sum + cell.units, 0);
-}
-
-export function runAiTurn(cells: Cell[]): {
+interface AiOutcome {
   cells: Cell[];
+  resources: Record<Player, number>;
   lastAction?: LastAction;
-} {
-  const aiCells = cells.filter((cell) => cell.owner === "ai" && cell.units >= MIN_UNITS_TO_MOVE);
-  if (aiCells.length === 0) {
-    return { cells };
+}
+
+function produceUnits(cells: Cell[], resources: Record<Player, number>): void {
+  const bases = cells.filter((cell) => cell.owner === "ai" && cell.type === "base");
+  if (!bases.length || resources.ai < UNIT_BLUEPRINTS.infantry.cost) {
+    return;
   }
 
-  const options: AttackOption[] = [];
+  const base = bases[Math.floor(Math.random() * bases.length)];
+  const newUnit = createBattalion({ owner: "ai", type: "infantry" });
+  base.battalions.push(newUnit);
+  resources.ai -= UNIT_BLUEPRINTS.infantry.cost;
+}
 
-  const aiBases = cells.filter((cell) => cell.owner === "ai" && cell.type === "base");
-  aiBases.forEach((base) => {
-    const neighbors = getNeighbors(cells, base);
-    neighbors
-      .filter((neighbor) => neighbor.owner === "player")
-      .forEach((enemy) => {
-        aiCells
-          .filter((candidate) => canReachWithinMovement(cells, candidate, enemy, "ai"))
-          .forEach((candidate) => {
-            options.push({ from: candidate, to: enemy, priority: 3 });
-          });
-      });
-  });
+export function runAiTurn(
+  cells: Cell[],
+  resources: Record<Player, number>
+): AiOutcome {
+  let updatedCells = cloneCells(cells);
+  const updatedResources: Record<Player, number> = { ...resources };
+  let lastAction: LastAction | undefined;
 
-  if (!options.length) {
-    aiCells.forEach((cell) => {
-      cells
-        .filter((candidate) => candidate.id !== cell.id)
-        .filter((candidate) => candidate.type === "resource" && candidate.owner !== "ai")
-        .forEach((resource) => {
-          if (canReachWithinMovement(cells, cell, resource, "ai")) {
-            options.push({ from: cell, to: resource, priority: 2 });
-          }
-        });
-    });
-  }
+  produceUnits(updatedCells, updatedResources);
 
-  if (!options.length) {
-    aiCells.forEach((cell) => {
-      cells
-        .filter((candidate) => candidate.id !== cell.id)
-        .filter((candidate) => candidate.owner === "player" || candidate.type === "base")
-        .forEach((enemy) => {
-          if (canReachWithinMovement(cells, cell, enemy, "ai")) {
-            options.push({ from: cell, to: enemy, priority: 1 });
-          }
-        });
-    });
-  }
+  outer: for (const cell of updatedCells) {
+    if (cell.owner !== "ai") {
+      continue;
+    }
 
-  if (!options.length) {
-    aiCells.forEach((cell) => {
-      cells
-        .filter((candidate) => candidate.id !== cell.id)
-        .filter((candidate) => !candidate.owner)
-        .forEach((neutral) => {
-          if (canReachWithinMovement(cells, cell, neutral, "ai")) {
-            options.push({ from: cell, to: neutral, priority: 0 });
-          }
-        });
-    });
-  }
-
-  if (!options.length) {
-    return { cells };
-  }
-
-  const scored = options
-    .map((option) => {
-      const attackPower = previewAttackPower(option.from);
-      const defensePower = previewDefensePower(option.to);
-      const simulation = performMove(cells, option.from.id, option.to.id, "ai");
-      if (simulation.cells === cells) {
-        return null;
+    for (const battalion of cell.battalions) {
+      if (battalion.owner !== "ai" || battalion.movementLeft <= 0) {
+        continue;
       }
 
-      const aiUnitsBefore = totalUnitsForOwner(cells, "ai");
-      const aiUnitsAfter = totalUnitsForOwner(simulation.cells, "ai");
-      const playerUnitsBefore = totalUnitsForOwner(cells, "player");
-      const playerUnitsAfter = totalUnitsForOwner(simulation.cells, "player");
+      const neighbors = getNeighbors(updatedCells, cell);
+      for (const neighbor of neighbors) {
+        if (neighbor.owner === "ai") {
+          continue;
+        }
 
-      const unitsDelta = (aiUnitsAfter - aiUnitsBefore) - (playerUnitsAfter - playerUnitsBefore);
-      const specializationBonus =
-        option.to.type === "base" && option.to.specialization && option.to.owner !== "ai"
-          ? 250
-          : 0;
-
-      const score =
-        option.priority * 1000 +
-        unitsDelta * 5 +
-        (attackPower - defensePower) * 10 +
-        specializationBonus;
-
-      return { ...option, score };
-    })
-    .filter((value): value is AttackOption & { score: number } => Boolean(value))
-    .sort((a, b) => b.score - a.score);
-
-  const best = scored[0];
-  if (!best) {
-    return { cells };
+        const outcome = performMove(updatedCells, cell.id, neighbor.id, "ai", battalion.id);
+        if (outcome.cells !== updatedCells) {
+          updatedCells = outcome.cells;
+          if (outcome.lastAction?.resourceReward) {
+            updatedResources.ai += outcome.lastAction.resourceReward;
+          }
+          lastAction = outcome.lastAction;
+          break outer;
+        }
+      }
+    }
   }
 
-  const outcome = performMove(cells, best.from.id, best.to.id, "ai");
-  return { cells: outcome.cells, lastAction: outcome.lastAction };
+  return { cells: updatedCells, resources: updatedResources, lastAction };
 }

@@ -26,6 +26,7 @@ export function useGamePersistence() {
         majorityStreak: state.majorityStreak,
         status: state.status,
         lastAction: state.lastAction,
+        resources: state.resources,
       };
       saveGameState(snapshot);
     });

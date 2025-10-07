@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { generateMap } from "../game/mapGenerator";
 import { runAiTurn } from "../game/ai";
+import { getAvailableBlueprints } from "../game/units";
 import { calculateStats, determineMajorityOwner, getCell } from "../game/utils";
 import { performMove } from "../game/performMove";
 import {
+  Battalion,
   Cell,
   GameSnapshot,
   GameStats,
@@ -14,10 +16,12 @@ import {
 } from "../types";
 
 const DEFAULT_GRID_SIZE = 8;
+const INITIAL_RESOURCES: Record<Player, number> = { player: 1, ai: 1 };
 
 interface GameStoreState extends GameSnapshot {
   stats: GameStats;
   selectedCellId: string | null;
+  selectedBattalionId: string | null;
   isHydrated: boolean;
   actions: {
     selectCell: (id: string) => void;
@@ -27,89 +31,55 @@ interface GameStoreState extends GameSnapshot {
     setGridSize: (size: number) => void;
     hydrate: (snapshot?: GameSnapshot) => void;
     clearSelection: () => void;
+    produceAt: (cellId: string, promptUnit: (options: Battalion[]) => Battalion | null) => void;
   };
 }
 
-function sanitizeCells(cells: Cell[]): Cell[] {
-  return cells.map((cell) => ({
-    ...cell,
+function normalizeCell(cell: Partial<Cell>): Cell {
+  return {
+    id: cell.id ?? "0-0",
+    x: cell.x ?? 0,
+    y: cell.y ?? 0,
+    type: cell.type ?? "neutral",
+    owner: cell.owner ?? null,
     specialization: cell.type === "base" ? cell.specialization ?? null : null,
-    specialUnits: {
-      elite: cell.specialUnits?.elite ?? 0,
-      guardian: cell.specialUnits?.guardian ?? 0,
-    },
-  }));
+    battalions: (cell.battalions ?? []).map((unit) => ({
+      ...unit,
+      movementLeft: unit.movementLeft ?? unit.maxMovement ?? 0,
+    })),
+    resourceClaimedBy: { ...(cell.resourceClaimedBy ?? {}) },
+  };
 }
 
-function cloneCell(cell: Cell): Cell {
-  return { ...cell, specialUnits: { ...cell.specialUnits } };
+function normalizeCells(cells: Partial<Cell>[]): Cell[] {
+  return cells.map((cell) => normalizeCell(cell));
+}
+
+function resetMovement(cells: Cell[], owner: Player) {
+  cells.forEach((cell) => {
+    cell.battalions
+      .filter((unit) => unit.owner === owner)
+      .forEach((unit) => {
+        unit.movementLeft = unit.maxMovement;
+      });
+  });
 }
 
 function createSnapshot(size: number): GameSnapshot {
-  const cells = sanitizeCells(generateMap({ size }));
+  const cells = normalizeCells(generateMap({ size }));
+  resetMovement(cells, "player");
+  resetMovement(cells, "ai");
   return {
     gridSize: size,
-    cells: produceUnitsForPlayer(cells, "player"),
+    cells,
     currentTurn: "player",
     turnNumber: 1,
     majorityOwner: null,
     majorityStreak: 0,
     status: "playing",
     lastAction: undefined,
+    resources: { ...INITIAL_RESOURCES },
   };
-}
-
-function produceUnitsForPlayer(cells: Cell[], player: Player): Cell[] {
-  const sanitized = sanitizeCells(cells);
-  const updated = sanitized.map((cell) => cloneCell(cell));
-  const resources = updated.filter(
-    (cell) => cell.owner === player && cell.type === "resource"
-  ).length;
-  const baseProduction = 2 + resources;
-
-  updated.forEach((cell) => {
-    if (cell.owner !== player || cell.type !== "base") {
-      return;
-    }
-
-    let production = baseProduction;
-    let eliteProduced = 0;
-    let guardianProduced = 0;
-
-    switch (cell.specialization) {
-      case "barracks":
-        production += 2;
-        break;
-      case "forge":
-        production += 1;
-        eliteProduced = Math.max(1, Math.floor(baseProduction / 2));
-        break;
-      case "sanctuary":
-        production += 1;
-        guardianProduced = Math.max(1, Math.floor(baseProduction / 2));
-        break;
-      default:
-        break;
-    }
-
-    cell.units += production;
-    if (eliteProduced > 0) {
-      cell.specialUnits.elite += eliteProduced;
-    }
-    if (guardianProduced > 0) {
-      cell.specialUnits.guardian += guardianProduced;
-    }
-
-    if (cell.specialUnits.elite > cell.units) {
-      cell.specialUnits.elite = cell.units;
-    }
-    const remaining = Math.max(cell.units - cell.specialUnits.elite, 0);
-    if (cell.specialUnits.guardian > remaining) {
-      cell.specialUnits.guardian = remaining;
-    }
-  });
-
-  return updated;
 }
 
 function checkBaseVictory(stats: GameStats): GameStatus | null {
@@ -155,6 +125,20 @@ function updateMajority(
   return { status, majorityOwner, majorityStreak };
 }
 
+function getControlledSpecializations(cells: Cell[], owner: Player) {
+  const controlled = new Set<"barracks" | "forge" | "sanctuary">();
+  cells.forEach((cell) => {
+    if (cell.owner === owner && cell.type === "base" && cell.specialization) {
+      controlled.add(cell.specialization);
+    }
+  });
+  return controlled;
+}
+
+function listPlayerBattalions(cell: Cell, owner: Player): Battalion[] {
+  return cell.battalions.filter((unit) => unit.owner === owner);
+}
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   ...(() => {
     const snapshot = createSnapshot(DEFAULT_GRID_SIZE);
@@ -163,22 +147,28 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ...snapshot,
       stats,
       selectedCellId: null,
+      selectedBattalionId: null,
       isHydrated: false,
     };
   })(),
   actions: {
     hydrate: (snapshot?: GameSnapshot) => {
-      if (!snapshot) {
-        set({ isHydrated: true });
+      if (!snapshot || !Array.isArray(snapshot.cells?.[0]?.battalions)) {
+        const fresh = createSnapshot(DEFAULT_GRID_SIZE);
+        const stats = calculateStats(fresh.cells);
+        set({ ...fresh, stats, selectedCellId: null, selectedBattalionId: null, isHydrated: true });
         return;
       }
-      const cells = sanitizeCells(snapshot.cells);
+      const cells = normalizeCells(snapshot.cells);
       const stats = calculateStats(cells);
+      const resources = snapshot.resources ?? { ...INITIAL_RESOURCES };
       set({
         ...snapshot,
         cells,
         stats,
+        resources,
         selectedCellId: null,
+        selectedBattalionId: null,
         isHydrated: true,
       });
     },
@@ -189,34 +179,74 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
       const cell = getCell(state.cells, id);
       if (!cell || cell.owner !== "player") {
+        set({ selectedCellId: null, selectedBattalionId: null });
         return;
       }
-      set({ selectedCellId: state.selectedCellId === id ? null : id });
+      const battalion = listPlayerBattalions(cell, "player")[0] ?? null;
+      const newSelectedId = state.selectedCellId === id ? null : id;
+      set({
+        selectedCellId: newSelectedId,
+        selectedBattalionId: newSelectedId ? battalion?.id ?? null : null,
+      });
     },
-    clearSelection: () => set({ selectedCellId: null }),
+    clearSelection: () => set({ selectedCellId: null, selectedBattalionId: null }),
     moveTo: (id: string) => {
       const state = get();
-      if (!state.selectedCellId || state.status !== "playing" || state.currentTurn !== "player") {
+      if (
+        !state.selectedCellId ||
+        !state.selectedBattalionId ||
+        state.status !== "playing" ||
+        state.currentTurn !== "player"
+      ) {
         return;
       }
-      const { cells, lastAction } = performMove(state.cells, state.selectedCellId, id, "player");
-      if (cells === state.cells) {
+
+      const outcome = performMove(
+        state.cells,
+        state.selectedCellId,
+        id,
+        "player",
+        state.selectedBattalionId
+      );
+
+      if (outcome.cells === state.cells) {
         return;
       }
-      const stats = calculateStats(cells);
+
+      let resources = { ...state.resources };
+      if (outcome.lastAction?.resourceReward) {
+        resources = {
+          ...resources,
+          player: resources.player + outcome.lastAction.resourceReward,
+        };
+      }
+
+      const stats = calculateStats(outcome.cells);
       const baseVictory = checkBaseVictory(stats);
+
       if (baseVictory) {
         set({
-          cells,
+          cells: outcome.cells,
           stats,
-          lastAction,
+          lastAction: outcome.lastAction,
           status: baseVictory,
           majorityOwner: null,
           majorityStreak: 0,
+          resources,
+          selectedCellId: null,
+          selectedBattalionId: null,
         });
         return;
       }
-      set({ cells, stats, lastAction });
+
+      set({
+        cells: outcome.cells,
+        stats,
+        lastAction: outcome.lastAction,
+        resources,
+        selectedCellId: null,
+        selectedBattalionId: null,
+      });
     },
     endTurn: () => {
       const state = get();
@@ -224,10 +254,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         return;
       }
 
-      let cells = state.cells.map((cell) => ({ ...cell }));
+      const clearedSelection = { selectedCellId: null, selectedBattalionId: null };
+      let cells = normalizeCells(state.cells);
+      let resources = { ...state.resources };
       let stats = calculateStats(cells);
-      const playerVictory = checkBaseVictory(stats);
+      let status: GameStatus = state.status;
+      let majorityOwner = state.majorityOwner;
+      let majorityStreak = state.majorityStreak;
+      let lastAction: LastAction | undefined = state.lastAction;
 
+      const playerVictory = checkBaseVictory(stats);
       if (playerVictory) {
         set({
           cells,
@@ -235,51 +271,32 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           status: playerVictory,
           majorityOwner: null,
           majorityStreak: 0,
-          selectedCellId: null,
+          ...clearedSelection,
         });
         return;
       }
 
-      // AI turn start
-      cells = produceUnitsForPlayer(cells, "ai");
+      resetMovement(cells, "ai");
+      const aiResult = runAiTurn(cells, resources);
+      cells = aiResult.cells;
+      resources = aiResult.resources;
+      if (aiResult.lastAction) {
+        lastAction = aiResult.lastAction;
+      }
       stats = calculateStats(cells);
-      let status: GameStatus = state.status;
-      let majorityOwner = state.majorityOwner;
-      let majorityStreak = state.majorityStreak;
 
-      const postProductionVictory = checkBaseVictory(stats);
-      if (postProductionVictory) {
+      const postAiVictory = checkBaseVictory(stats);
+      if (postAiVictory) {
         set({
           cells,
           stats,
-          status: postProductionVictory,
+          status: postAiVictory,
           majorityOwner: null,
           majorityStreak: 0,
-          selectedCellId: null,
-        });
-        return;
-      }
-
-      let lastAction: LastAction | undefined = state.lastAction;
-
-      const aiOutcome = runAiTurn(cells);
-      cells = aiOutcome.cells;
-      if (aiOutcome.lastAction) {
-        lastAction = aiOutcome.lastAction;
-      }
-      stats = calculateStats(cells);
-
-      const postAttackVictory = checkBaseVictory(stats);
-      if (postAttackVictory) {
-        set({
-          cells,
-          stats,
           lastAction,
-          selectedCellId: null,
+          ...clearedSelection,
           currentTurn: "ai",
-          status: postAttackVictory,
-          majorityOwner: null,
-          majorityStreak: 0,
+          resources,
         });
         return;
       }
@@ -289,45 +306,30 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       majorityOwner = majorityProgress.majorityOwner;
       majorityStreak = majorityProgress.majorityStreak;
 
-      if (status !== "playing") {
-        set({
-          cells,
-          stats,
-          lastAction,
-          selectedCellId: null,
-          currentTurn: "ai",
-          status,
-          majorityOwner,
-          majorityStreak,
-        });
-        return;
-      }
-
-      // Player turn start
-      cells = produceUnitsForPlayer(cells, "player");
-      stats = calculateStats(cells);
+      resetMovement(cells, "player");
 
       set({
         cells,
         stats,
+        resources,
         currentTurn: "player",
         turnNumber: state.turnNumber + 1,
-        selectedCellId: null,
-        lastAction,
         status,
         majorityOwner,
         majorityStreak,
+        lastAction,
+        ...clearedSelection,
       });
     },
     newGame: (size?: number) => {
-      const state = get();
-      const gridSize = size ?? state.gridSize;
+      const gridSize = size ?? get().gridSize;
       const snapshot = createSnapshot(gridSize);
       const stats = calculateStats(snapshot.cells);
       set({
         ...snapshot,
         stats,
         selectedCellId: null,
+        selectedBattalionId: null,
       });
     },
     setGridSize: (size: number) => {
@@ -341,6 +343,72 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ...snapshot,
         stats,
         selectedCellId: null,
+        selectedBattalionId: null,
+      });
+    },
+    produceAt: (cellId: string, promptUnit: (options: Battalion[]) => Battalion | null) => {
+      const state = get();
+      if (state.status !== "playing" || state.currentTurn !== "player") {
+        return;
+      }
+      const cell = getCell(state.cells, cellId);
+      if (!cell || cell.owner !== "player" || cell.type !== "base") {
+        return;
+      }
+
+      const specializations = getControlledSpecializations(state.cells, "player");
+      const blueprints = getAvailableBlueprints(specializations);
+      const prospectiveUnits = blueprints.map((blueprint) => ({
+        id: `${blueprint.type}-preview`,
+        owner: "player" as Player,
+        type: blueprint.type,
+        soldiers: blueprint.soldiers,
+        attack: blueprint.attack,
+        defense: blueprint.defense,
+        maxMovement: blueprint.movement,
+        movementLeft: blueprint.movement,
+      }));
+
+      const choice = promptUnit(prospectiveUnits);
+      if (!choice) {
+        return;
+      }
+
+      const blueprint = blueprints.find((bp) => bp.type === choice.type);
+      if (!blueprint) {
+        return;
+      }
+
+      if (state.resources.player < blueprint.cost) {
+        return;
+      }
+
+      const newUnit: Battalion = {
+        id: `${choice.type}-${Date.now()}`,
+        owner: "player",
+        type: choice.type,
+        soldiers: blueprint.soldiers,
+        attack: blueprint.attack,
+        defense: blueprint.defense,
+        maxMovement: blueprint.movement,
+        movementLeft: blueprint.movement,
+      };
+
+      const updatedCells = state.cells.map((candidate) =>
+        candidate.id === cell.id
+          ? { ...candidate, battalions: [...candidate.battalions, newUnit] }
+          : candidate
+      );
+
+      const stats = calculateStats(updatedCells);
+
+      set({
+        cells: updatedCells,
+        stats,
+        resources: {
+          ...state.resources,
+          player: state.resources.player - blueprint.cost,
+        },
       });
     },
   },

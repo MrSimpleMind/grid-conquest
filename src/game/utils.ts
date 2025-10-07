@@ -1,4 +1,4 @@
-import { Cell, GameStats, Owner, Player } from "../types";
+import { Battalion, Cell, GameStats, Owner, Player } from "../types";
 
 export function getCellIndex(cells: Cell[], id: string): number {
   return cells.findIndex((cell) => cell.id === id);
@@ -27,45 +27,64 @@ export function areNeighbors(a: Cell, b: Cell): boolean {
   return distance === 1;
 }
 
-export function findMovementPath(
+export interface MovementResult {
+  path: Cell[];
+  cost: number;
+}
+
+export function findBattalionPath(
   cells: Cell[],
   from: Cell,
   to: Cell,
-  player: Player,
-  maxSteps = 3
-): Cell[] | null {
+  battalion: Battalion
+): MovementResult | null {
   if (from.id === to.id) {
     return null;
   }
 
-  const visited = new Set<string>([from.id]);
-  const queue: { cell: Cell; path: Cell[] }[] = [{ cell: from, path: [from] }];
+  const queue: { cell: Cell; movementLeft: number; path: Cell[] }[] = [
+    { cell: from, movementLeft: battalion.movementLeft, path: [from] },
+  ];
+  const bestMovement = new Map<string, number>([[from.id, battalion.movementLeft]]);
 
   while (queue.length > 0) {
-    const { cell, path } = queue.shift()!;
-    const steps = path.length - 1;
-
-    if (steps >= maxSteps) {
-      continue;
-    }
+    const { cell, movementLeft, path } = queue.shift()!;
 
     for (const neighbor of getNeighbors(cells, cell)) {
-      if (visited.has(neighbor.id)) {
+      const isFriendly = neighbor.owner === battalion.owner;
+      if (!isFriendly && path.length > battalion.movementLeft) {
         continue;
       }
 
-      const nextSteps = steps + 1;
-      if (nextSteps > maxSteps) {
+      let cost = 1;
+      let remaining = movementLeft - cost;
+
+      if (!isFriendly) {
+        cost = movementLeft;
+        remaining = 0;
+        if (movementLeft <= 0) {
+          continue;
+        }
+      }
+
+      if (remaining < 0) {
         continue;
       }
+
+      const nextPath = [...path, neighbor];
 
       if (neighbor.id === to.id) {
-        return [...path, neighbor];
+        return { path: nextPath, cost: battalion.movementLeft - remaining };
       }
 
-      if (neighbor.owner === player) {
-        visited.add(neighbor.id);
-        queue.push({ cell: neighbor, path: [...path, neighbor] });
+      if (!isFriendly) {
+        continue;
+      }
+
+      const previousBest = bestMovement.get(neighbor.id) ?? -1;
+      if (remaining > previousBest) {
+        bestMovement.set(neighbor.id, remaining);
+        queue.push({ cell: neighbor, movementLeft: remaining, path: nextPath });
       }
     }
   }
@@ -73,49 +92,51 @@ export function findMovementPath(
   return null;
 }
 
-export function canReachWithinMovement(
-  cells: Cell[],
-  from: Cell,
-  to: Cell,
-  player: Player,
-  maxSteps = 3
-): boolean {
-  return Boolean(findMovementPath(cells, from, to, player, maxSteps));
-}
-
 export function getReachableCells(
   cells: Cell[],
   from: Cell,
-  player: Player,
-  maxSteps = 3
-): Cell[] {
-  const visited = new Set<string>([from.id]);
-  const reachable = new Set<string>();
-  const queue: { cell: Cell; steps: number }[] = [{ cell: from, steps: 0 }];
+  battalion: Battalion
+): { reachable: Cell[]; movementLeft: Map<string, number> } {
+  const reachable = new Map<string, number>();
+  const queue: { cell: Cell; movementLeft: number }[] = [
+    { cell: from, movementLeft: battalion.movementLeft },
+  ];
 
   while (queue.length > 0) {
-    const { cell, steps } = queue.shift()!;
-
-    if (steps >= maxSteps) {
-      continue;
-    }
+    const { cell, movementLeft } = queue.shift()!;
 
     for (const neighbor of getNeighbors(cells, cell)) {
-      const nextSteps = steps + 1;
-      if (nextSteps > maxSteps) {
+      const isFriendly = neighbor.owner === battalion.owner;
+      let cost = 1;
+      let remaining = movementLeft - cost;
+
+      if (!isFriendly) {
+        cost = movementLeft;
+        remaining = 0;
+        if (movementLeft <= 0) {
+          continue;
+        }
+      }
+
+      if (remaining < 0) {
         continue;
       }
 
-      reachable.add(neighbor.id);
+      const existing = reachable.get(neighbor.id);
+      if (existing === undefined || remaining > existing) {
+        reachable.set(neighbor.id, remaining);
+      }
 
-      if (neighbor.owner === player && !visited.has(neighbor.id)) {
-        visited.add(neighbor.id);
-        queue.push({ cell: neighbor, steps: nextSteps });
+      if (isFriendly && remaining > 0) {
+        queue.push({ cell: neighbor, movementLeft: remaining });
       }
     }
   }
 
-  return cells.filter((cell) => reachable.has(cell.id));
+  return {
+    reachable: cells.filter((cell) => reachable.has(cell.id)),
+    movementLeft: reachable,
+  };
 }
 
 export function calculateStats(cells: Cell[]): GameStats {
