@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Battalion, Cell } from "./types";
 import { ControlsBar } from "./components/ControlsBar";
 import { GameGrid } from "./components/GameGrid";
+import { SelectedBattalionPanel } from "./components/SelectedBattalionPanel";
 import { StatsPanel } from "./components/StatsPanel";
 import { VictoryBanner } from "./components/VictoryBanner";
 import { useGamePersistence } from "./hooks/useGamePersistence";
@@ -24,6 +25,13 @@ export default function App() {
   const resourcePool = useGameStore((state) => state.resources);
 
   useGamePersistence();
+
+  const selectedCell = useMemo(() => {
+    if (!selectedCellId) {
+      return null;
+    }
+    return cells.find((cell) => cell.id === selectedCellId) ?? null;
+  }, [cells, selectedCellId]);
 
   const boardMessage = useMemo(() => {
     if (!isHydrated) {
@@ -78,6 +86,13 @@ export default function App() {
     actions.selectCell(cell.id);
   };
 
+  const handleBattalionSelect = (battalionId: string) => {
+    if (!selectedCell) {
+      return;
+    }
+    actions.selectBattalion(selectedCell.id, battalionId);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 sm:py-10">
@@ -102,17 +117,24 @@ export default function App() {
 
         <section className="flex flex-1 flex-col items-center gap-4 pb-10">
           <p className="text-sm text-slate-300">{boardMessage}</p>
-          <div className="w-full overflow-auto">
-            <div className="mx-auto min-w-[18rem] max-w-max">
-              <GameGrid
-                cells={cells}
-                gridSize={gridSize}
-                selectedCellId={selectedCellId}
-                selectedBattalionId={selectedBattalionId}
-                lastAction={lastAction}
-                onCellClick={handleCellClick}
-              />
+          <div className="flex w-full flex-col items-stretch gap-4 lg:flex-row lg:items-start">
+            <div className="flex-1 overflow-auto">
+              <div className="mx-auto min-w-[18rem] max-w-max">
+                <GameGrid
+                  cells={cells}
+                  gridSize={gridSize}
+                  selectedCellId={selectedCellId}
+                  selectedBattalionId={selectedBattalionId}
+                  lastAction={lastAction}
+                  onCellClick={handleCellClick}
+                />
+              </div>
             </div>
+            <SelectedBattalionPanel
+              cell={selectedCell}
+              selectedBattalionId={selectedBattalionId}
+              onSelectBattalion={handleBattalionSelect}
+            />
           </div>
         </section>
       </main>

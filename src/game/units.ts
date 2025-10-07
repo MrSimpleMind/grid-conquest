@@ -58,9 +58,11 @@ let battalionId = 0;
 export function createBattalion({
   owner,
   type,
+  initialMovement,
 }: {
   owner: Player;
   type: UnitType;
+  initialMovement?: number;
 }): Battalion {
   const blueprint = UNIT_BLUEPRINTS[type];
   battalionId += 1;
@@ -72,7 +74,7 @@ export function createBattalion({
     attack: blueprint.attack,
     defense: blueprint.defense,
     maxMovement: blueprint.movement,
-    movementLeft: blueprint.movement,
+    movementLeft: initialMovement ?? blueprint.movement,
   };
 }
 
