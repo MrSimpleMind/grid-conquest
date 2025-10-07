@@ -80,6 +80,7 @@ export default function App() {
       if (cell.type === "base" && cell.owner === "player") {
         actions.produceAt(cell.id, handleUnitPrompt);
       }
+      actions.clearSelection();
       return;
     }
 
