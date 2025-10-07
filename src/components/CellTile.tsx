@@ -112,26 +112,33 @@ export function CellTile({
       )}
       title={title || undefined}
     >
-      <div className="flex h-full w-full flex-col items-center justify-between gap-1.5 p-1 text-center sm:gap-2 sm:p-2">
-        {specialization && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-amber-200 drop-shadow-sm">
-            <span>{specialization.icon}</span>
-            <span className="hidden sm:inline">{specialization.label}</span>
-          </span>
-        )}
-        {icon && <span className="text-base leading-none drop-shadow-sm sm:text-lg">{icon}</span>}
+      {icon && (
+        <span className="absolute left-1 top-1 inline-flex items-center justify-center rounded-md bg-slate-950/60 px-1.5 py-1 text-[0.65rem] text-slate-100 shadow-sm ring-1 ring-white/10 sm:left-1.5 sm:top-1.5 sm:text-xs">
+          {icon}
+        </span>
+      )}
+      {specialization && (
+        <span
+          className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[0.55rem] font-semibold text-amber-100 shadow-sm ring-1 ring-amber-200/20 sm:right-1.5 sm:top-1.5"
+          title={`${specialization.label}: ${specialization.description}`}
+        >
+          <span>{specialization.icon}</span>
+          <span className="hidden sm:inline">{specialization.label}</span>
+        </span>
+      )}
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-2 pb-3 pt-5 text-center sm:gap-3 sm:px-3 sm:pb-4 sm:pt-6">
         <div className="flex flex-col items-center gap-1">
           <span className="text-lg font-semibold leading-tight drop-shadow-md sm:text-2xl">
             {stackSize > 0 ? `${stackSize}×` : "—"}
           </span>
           {stackSize > 0 && (
-            <span className="rounded-full bg-slate-900/40 px-2 py-0.5 text-[0.6rem] uppercase tracking-wide text-slate-200/80 sm:text-xs">
+            <span className="rounded-full bg-slate-950/50 px-2 py-0.5 text-[0.6rem] uppercase tracking-wide text-slate-200/90 shadow-sm sm:text-xs">
               {soldierCount} soldati
             </span>
           )}
         </div>
-        <span className="text-[0.6rem] uppercase tracking-wide text-slate-200/80 leading-tight sm:text-xs">
-          <span className="block w-full truncate">{ownerLabel}</span>
+        <span className="w-full truncate text-[0.55rem] uppercase tracking-wide text-slate-200/70 drop-shadow-sm sm:text-[0.65rem]">
+          {ownerLabel}
         </span>
       </div>
     </button>
