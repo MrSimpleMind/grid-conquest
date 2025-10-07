@@ -1,5 +1,6 @@
-import { Cell, LastAction } from "../types";
-import { canReachWithinMovement, getNeighbors, getCellIndex } from "./utils";
+import { Cell, LastAction, Player } from "../types";
+import { performMove, previewAttackPower, previewDefensePower } from "./performMove";
+import { canReachWithinMovement, getNeighbors } from "./utils";
 
 const MIN_UNITS_TO_MOVE = 2;
 
@@ -9,54 +10,10 @@ interface AttackOption {
   priority: number;
 }
 
-function cloneCells(cells: Cell[]): Cell[] {
-  return cells.map((cell) => ({ ...cell }));
-}
-
-function unitsToDeploy(units: number): number {
-  return Math.max(1, Math.floor(units / 2));
-}
-
-function executeMove(
-  source: Cell,
-  target: Cell,
-  cells: Cell[]
-): { cells: Cell[]; lastAction: LastAction } {
-  const updated = cloneCells(cells);
-  const fromIndex = getCellIndex(updated, source.id);
-  const toIndex = getCellIndex(updated, target.id);
-  const attacker = updated[fromIndex];
-  const defender = updated[toIndex];
-
-  const deployed = unitsToDeploy(attacker.units);
-  attacker.units -= deployed;
-
-  let conqueredOwner = defender.owner;
-
-  if (!defender.owner || defender.owner !== attacker.owner) {
-    if (deployed > defender.units) {
-      defender.owner = attacker.owner;
-      defender.units = deployed - defender.units;
-      conqueredOwner = attacker.owner;
-    } else {
-      defender.units = defender.units - deployed;
-      if (defender.units === 0) {
-        defender.owner = null;
-      }
-    }
-  } else {
-    defender.units += deployed;
-  }
-
-  return {
-    cells: updated,
-    lastAction: {
-      fromId: attacker.id,
-      toId: defender.id,
-      conqueredOwner,
-      timestamp: Date.now(),
-    },
-  };
+function totalUnitsForOwner(cells: Cell[], owner: Player): number {
+  return cells
+    .filter((cell) => cell.owner === owner)
+    .reduce((sum, cell) => sum + cell.units, 0);
 }
 
 export function runAiTurn(cells: Cell[]): {
@@ -129,10 +86,33 @@ export function runAiTurn(cells: Cell[]): {
 
   const scored = options
     .map((option) => {
-      const deployed = unitsToDeploy(option.from.units);
-      const advantage = deployed - option.to.units;
-      return { ...option, score: option.priority * 100 + advantage };
+      const attackPower = previewAttackPower(option.from);
+      const defensePower = previewDefensePower(option.to);
+      const simulation = performMove(cells, option.from.id, option.to.id, "ai");
+      if (simulation.cells === cells) {
+        return null;
+      }
+
+      const aiUnitsBefore = totalUnitsForOwner(cells, "ai");
+      const aiUnitsAfter = totalUnitsForOwner(simulation.cells, "ai");
+      const playerUnitsBefore = totalUnitsForOwner(cells, "player");
+      const playerUnitsAfter = totalUnitsForOwner(simulation.cells, "player");
+
+      const unitsDelta = (aiUnitsAfter - aiUnitsBefore) - (playerUnitsAfter - playerUnitsBefore);
+      const specializationBonus =
+        option.to.type === "base" && option.to.specialization && option.to.owner !== "ai"
+          ? 250
+          : 0;
+
+      const score =
+        option.priority * 1000 +
+        unitsDelta * 5 +
+        (attackPower - defensePower) * 10 +
+        specializationBonus;
+
+      return { ...option, score };
     })
+    .filter((value): value is AttackOption & { score: number } => Boolean(value))
     .sort((a, b) => b.score - a.score);
 
   const best = scored[0];
@@ -140,5 +120,6 @@ export function runAiTurn(cells: Cell[]): {
     return { cells };
   }
 
-  return executeMove(best.from, best.to, cells);
+  const outcome = performMove(cells, best.from.id, best.to.id, "ai");
+  return { cells: outcome.cells, lastAction: outcome.lastAction };
 }

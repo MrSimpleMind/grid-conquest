@@ -63,6 +63,7 @@ export default function App() {
           majorityOwner={majorityOwner}
           majorityStreak={majorityStreak}
           status={status}
+          cells={cells}
         />
 
         <section className="flex flex-1 flex-col items-center gap-4 pb-10">

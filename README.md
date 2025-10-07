@@ -7,6 +7,7 @@ Grid Conquest è una Progressive Web App strategica a turni in cui ti confronti 
 - **Gameplay a turni**: seleziona le tue basi, sposta le unità verso celle adiacenti e conquista risorse o insediamenti nemici.
 - **Generatore di mappe casuali**: ogni nuova partita crea una griglia 8×8 (o di dimensione personalizzata) con basi e risorse distribuite in modo procedurale.
 - **Produzione di unità basata sulle risorse**: più zone risorsa controlli, più velocemente cresceranno le tue truppe.
+- **Basi neutrali specializzate**: conquista avamposti neutrali per sbloccare caserme, forge o santuari capaci di addestrare unità d'élite con bonus offensivi o difensivi.
 - **IA locale con priorità**: l'avversario valuta difesa, conquista di risorse e attacchi ravvicinati seguendo strategie determinate.
 - **Salvataggio automatico**: lo stato della partita viene memorizzato in IndexedDB tramite Dexie e ripristinato al riavvio.
 - **PWA offline-first**: service worker Workbox generato via `vite-plugin-pwa`, manifest dedicato e icone per l'installazione su desktop/mobile.

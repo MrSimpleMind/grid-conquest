@@ -2,6 +2,13 @@ export type Player = "player" | "ai";
 export type Owner = Player | null;
 export type CellType = "neutral" | "base" | "resource";
 
+export type BaseSpecialization = "barracks" | "forge" | "sanctuary" | null;
+
+export interface SpecialUnitCounts {
+  elite: number;
+  guardian: number;
+}
+
 export interface Cell {
   id: string;
   x: number;
@@ -9,6 +16,8 @@ export interface Cell {
   type: CellType;
   owner: Owner;
   units: number;
+  specialization: BaseSpecialization;
+  specialUnits: SpecialUnitCounts;
 }
 
 export interface GameStats {

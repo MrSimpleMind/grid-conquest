@@ -1,13 +1,8 @@
 import { create } from "zustand";
 import { generateMap } from "../game/mapGenerator";
 import { runAiTurn } from "../game/ai";
-import {
-  calculateStats,
-  determineMajorityOwner,
-  findMovementPath,
-  getCell,
-  getCellIndex,
-} from "../game/utils";
+import { calculateStats, determineMajorityOwner, getCell } from "../game/utils";
+import { performMove } from "../game/performMove";
 import {
   Cell,
   GameSnapshot,
@@ -35,8 +30,23 @@ interface GameStoreState extends GameSnapshot {
   };
 }
 
+function sanitizeCells(cells: Cell[]): Cell[] {
+  return cells.map((cell) => ({
+    ...cell,
+    specialization: cell.type === "base" ? cell.specialization ?? null : null,
+    specialUnits: {
+      elite: cell.specialUnits?.elite ?? 0,
+      guardian: cell.specialUnits?.guardian ?? 0,
+    },
+  }));
+}
+
+function cloneCell(cell: Cell): Cell {
+  return { ...cell, specialUnits: { ...cell.specialUnits } };
+}
+
 function createSnapshot(size: number): GameSnapshot {
-  const cells = generateMap({ size });
+  const cells = sanitizeCells(generateMap({ size }));
   return {
     gridSize: size,
     cells: produceUnitsForPlayer(cells, "player"),
@@ -50,75 +60,56 @@ function createSnapshot(size: number): GameSnapshot {
 }
 
 function produceUnitsForPlayer(cells: Cell[], player: Player): Cell[] {
-  const updated = cells.map((cell) => ({ ...cell }));
-  const resources = updated.filter((cell) => cell.owner === player && cell.type === "resource").length;
-  const production = 2 + resources;
+  const sanitized = sanitizeCells(cells);
+  const updated = sanitized.map((cell) => cloneCell(cell));
+  const resources = updated.filter(
+    (cell) => cell.owner === player && cell.type === "resource"
+  ).length;
+  const baseProduction = 2 + resources;
+
   updated.forEach((cell) => {
-    if (cell.owner === player && cell.type === "base") {
-      cell.units += production;
+    if (cell.owner !== player || cell.type !== "base") {
+      return;
+    }
+
+    let production = baseProduction;
+    let eliteProduced = 0;
+    let guardianProduced = 0;
+
+    switch (cell.specialization) {
+      case "barracks":
+        production += 2;
+        break;
+      case "forge":
+        production += 1;
+        eliteProduced = Math.max(1, Math.floor(baseProduction / 2));
+        break;
+      case "sanctuary":
+        production += 1;
+        guardianProduced = Math.max(1, Math.floor(baseProduction / 2));
+        break;
+      default:
+        break;
+    }
+
+    cell.units += production;
+    if (eliteProduced > 0) {
+      cell.specialUnits.elite += eliteProduced;
+    }
+    if (guardianProduced > 0) {
+      cell.specialUnits.guardian += guardianProduced;
+    }
+
+    if (cell.specialUnits.elite > cell.units) {
+      cell.specialUnits.elite = cell.units;
+    }
+    const remaining = Math.max(cell.units - cell.specialUnits.elite, 0);
+    if (cell.specialUnits.guardian > remaining) {
+      cell.specialUnits.guardian = remaining;
     }
   });
+
   return updated;
-}
-
-function performMove(
-  cells: Cell[],
-  fromId: string,
-  toId: string,
-  player: Player
-): { cells: Cell[]; lastAction: LastAction | undefined } {
-  const fromCell = getCell(cells, fromId);
-  const toCell = getCell(cells, toId);
-
-  if (!fromCell || !toCell) {
-    return { cells, lastAction: undefined };
-  }
-
-  if (fromCell.owner !== player || fromCell.units < 2) {
-    return { cells, lastAction: undefined };
-  }
-
-  const path = findMovementPath(cells, fromCell, toCell, player, 3);
-
-  if (!path) {
-    return { cells, lastAction: undefined };
-  }
-
-  const updated = cells.map((cell) => ({ ...cell }));
-  const fromIndex = getCellIndex(updated, fromId);
-  const toIndex = getCellIndex(updated, toId);
-  const attacker = updated[fromIndex];
-  const defender = updated[toIndex];
-  const deployed = Math.max(1, Math.floor(attacker.units / 2));
-
-  attacker.units -= deployed;
-  let conqueredOwner: Owner = defender.owner;
-
-  if (!defender.owner || defender.owner !== player) {
-    if (deployed > defender.units) {
-      defender.owner = player;
-      defender.units = deployed - defender.units;
-      conqueredOwner = player;
-    } else {
-      defender.units = defender.units - deployed;
-      if (defender.units === 0) {
-        defender.owner = null;
-        conqueredOwner = null;
-      }
-    }
-  } else {
-    defender.units += deployed;
-  }
-
-  return {
-    cells: updated,
-    lastAction: {
-      fromId,
-      toId,
-      conqueredOwner,
-      timestamp: Date.now(),
-    },
-  };
 }
 
 function checkBaseVictory(stats: GameStats): GameStatus | null {
@@ -181,9 +172,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         set({ isHydrated: true });
         return;
       }
-      const stats = calculateStats(snapshot.cells);
+      const cells = sanitizeCells(snapshot.cells);
+      const stats = calculateStats(cells);
       set({
         ...snapshot,
+        cells,
         stats,
         selectedCellId: null,
         isHydrated: true,

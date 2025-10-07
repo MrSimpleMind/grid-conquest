@@ -17,6 +17,25 @@ const typeIcon: Record<Cell["type"], string> = {
   neutral: "",
 };
 
+const specializationInfo = {
+  barracks: {
+    icon: "🎖️",
+    label: "Caserma avanzata",
+    description: "Produce rinforzi addestrati e più numerosi ogni turno.",
+  },
+  forge: {
+    icon: "⚒️",
+    label: "Forgia da guerra",
+    description: "Addestra unità d'assalto d'élite con maggiore potenza offensiva.",
+  },
+  sanctuary: {
+    icon: "🛡️",
+    label: "Santuario difensivo",
+    description: "Genera guardiani resilienti che rinforzano la difesa della base.",
+  },
+} as const;
+
+export function CellTile({ cell, isSelected, lastAction, onClick }: CellTileProps) {
 export function CellTile({
   cell,
   isSelected,
@@ -43,6 +62,10 @@ export function CellTile({
       ? "Risorsa"
       : "Neutrale";
   const icon = typeIcon[cell.type];
+  const specialization =
+    cell.type === "base" && cell.specialization ? specializationInfo[cell.specialization] : null;
+  const hasElite = cell.specialUnits.elite > 0;
+  const hasGuardian = cell.specialUnits.guardian > 0;
 
   const overlayClass = showMovementOverlay
     ? isSelected || isReachable
@@ -65,14 +88,43 @@ export function CellTile({
           ? "hover:-translate-y-0.5"
           : "hover:scale-[0.99]"
       )}
+      title={
+        specialization
+          ? `${specialization.label}: ${specialization.description}`
+          : cell.type === "resource"
+          ? "Fornisce risorse aggiuntive a chi la controlla."
+          : undefined
+      }
     >
       <div className="flex h-full w-full flex-col items-center justify-between gap-1.5 p-1 text-center sm:gap-2 sm:p-2">
+        {specialization && (
+          <span className="flex items-center gap-1 text-xs font-semibold text-amber-200 drop-shadow-sm">
+            <span>{specialization.icon}</span>
+            <span className="hidden sm:inline">{specialization.label}</span>
+          </span>
+        )}
         {icon && (
           <span className="text-base leading-none drop-shadow-sm sm:text-lg">{icon}</span>
         )}
-        <span className="text-lg font-semibold leading-tight drop-shadow-md sm:text-2xl">
-          {cell.units}
-        </span>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-lg font-semibold leading-tight drop-shadow-md sm:text-2xl">
+            {cell.units}
+          </span>
+          {(hasElite || hasGuardian) && (
+            <div className="flex flex-wrap items-center justify-center gap-1 text-[0.6rem] sm:text-xs">
+              {hasElite && (
+                <span className="flex items-center gap-1 rounded-full bg-orange-500/20 px-1.5 py-0.5 text-orange-100">
+                  ⚔️ {cell.specialUnits.elite}
+                </span>
+              )}
+              {hasGuardian && (
+                <span className="flex items-center gap-1 rounded-full bg-sky-500/20 px-1.5 py-0.5 text-sky-100">
+                  🛡️ {cell.specialUnits.guardian}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <span className="text-[0.6rem] uppercase tracking-wide text-slate-200/80 leading-tight sm:text-xs">
           <span className="block w-full truncate">{ownerLabel}</span>
         </span>
