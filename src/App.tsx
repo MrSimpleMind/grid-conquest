@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { Battalion, Cell } from "./types";
 import { ControlsBar } from "./components/ControlsBar";
 import { GameGrid } from "./components/GameGrid";
 import { StatsPanel } from "./components/StatsPanel";
@@ -17,8 +18,10 @@ export default function App() {
   const status = useGameStore((state) => state.status);
   const lastAction = useGameStore((state) => state.lastAction);
   const selectedCellId = useGameStore((state) => state.selectedCellId);
+  const selectedBattalionId = useGameStore((state) => state.selectedBattalionId);
   const isHydrated = useGameStore((state) => state.isHydrated);
   const actions = useGameStore((state) => state.actions);
+  const resourcePool = useGameStore((state) => state.resources);
 
   useGamePersistence();
 
@@ -32,17 +35,47 @@ export default function App() {
     return "Partita terminata.";
   }, [currentTurn, isHydrated, status]);
 
-  const handleCellClick = (cellId: string) => {
+  const handleUnitPrompt = (options: Battalion[]): Battalion | null => {
+    if (options.length === 0) {
+      return null;
+    }
+    const choice = window.prompt(
+      [
+        "Scegli l'unità da addestrare:",
+        ...options.map(
+          (unit, index) =>
+            `${index + 1}) ${unit.type.toUpperCase()} - Soldati: ${unit.soldiers}, Attacco: ${unit.attack}, Difesa: ${unit.defense}`
+        ),
+      ].join("\n")
+    );
+    if (!choice) {
+      return null;
+    }
+    const index = Number.parseInt(choice, 10) - 1;
+    if (Number.isNaN(index) || index < 0 || index >= options.length) {
+      return null;
+    }
+    return options[index];
+  };
+
+  const handleCellClick = (cell: Cell) => {
     if (status !== "playing" || currentTurn !== "player") {
       return;
     }
 
-    if (selectedCellId && selectedCellId !== cellId) {
-      actions.moveTo(cellId);
+    if (selectedCellId && selectedCellId !== cell.id) {
+      actions.moveTo(cell.id);
       return;
     }
 
-    actions.selectCell(cellId);
+    if (selectedCellId === cell.id) {
+      if (cell.type === "base" && cell.owner === "player") {
+        actions.produceAt(cell.id, handleUnitPrompt);
+      }
+      return;
+    }
+
+    actions.selectCell(cell.id);
   };
 
   return (
@@ -64,6 +97,7 @@ export default function App() {
           majorityStreak={majorityStreak}
           status={status}
           cells={cells}
+          resources={resourcePool}
         />
 
         <section className="flex flex-1 flex-col items-center gap-4 pb-10">
@@ -74,8 +108,9 @@ export default function App() {
                 cells={cells}
                 gridSize={gridSize}
                 selectedCellId={selectedCellId}
+                selectedBattalionId={selectedBattalionId}
                 lastAction={lastAction}
-                onCellClick={(cell) => handleCellClick(cell.id)}
+                onCellClick={handleCellClick}
               />
             </div>
           </div>

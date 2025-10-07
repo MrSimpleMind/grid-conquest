@@ -1,290 +1,154 @@
-import { BaseSpecialization, Cell, LastAction, Owner, Player } from "../types";
-import {
-  findMovementPath,
-  getCell,
-  getCellIndex,
-} from "./utils";
+import { Battalion, Cell, LastAction, Owner, Player } from "../types";
+import { findBattalionPath } from "./utils";
 
-const ELITE_ATTACK_MODIFIER = 1.5;
-const ELITE_DEFENSE_MODIFIER = 1.2;
-const GUARDIAN_ATTACK_MODIFIER = 1.1;
-const GUARDIAN_DEFENSE_MODIFIER = 1.6;
-const FORGE_ATTACK_BONUS = 1.25;
-const SANCTUARY_DEFENSE_BONUS = 1.25;
-
-interface UnitDistribution {
-  regular: number;
-  elite: number;
-  guardian: number;
-}
-
-function cloneCell(cell: Cell): Cell {
-  return {
+function cloneCells(cells: Cell[]): Cell[] {
+  return cells.map((cell) => ({
     ...cell,
-    specialUnits: {
-      elite: cell.specialUnits?.elite ?? 0,
-      guardian: cell.specialUnits?.guardian ?? 0,
-    },
-  };
+    battalions: cell.battalions.map((unit) => ({ ...unit })),
+    resourceClaimedBy: { ...cell.resourceClaimedBy },
+  }));
 }
 
-function normalizeSpecialUnits(cell: Cell) {
-  if (cell.specialUnits.elite < 0) {
-    cell.specialUnits.elite = 0;
+function removeBattalion(cell: Cell, battalionId: string): Battalion | null {
+  const index = cell.battalions.findIndex((unit) => unit.id === battalionId);
+  if (index === -1) {
+    return null;
   }
-  if (cell.specialUnits.guardian < 0) {
-    cell.specialUnits.guardian = 0;
-  }
-  const maxElite = Math.min(cell.specialUnits.elite, cell.units);
-  cell.specialUnits.elite = maxElite;
-  const remaining = Math.max(cell.units - cell.specialUnits.elite, 0);
-  cell.specialUnits.guardian = Math.min(cell.specialUnits.guardian, remaining);
+  const [battalion] = cell.battalions.splice(index, 1);
+  return battalion;
 }
 
-function distributeUnits(cell: Cell, amount: number): UnitDistribution {
-  if (amount <= 0 || cell.units === 0) {
-    return { regular: 0, elite: 0, guardian: 0 };
-  }
-
-  const eliteAvailable = cell.specialUnits.elite;
-  const guardianAvailable = cell.specialUnits.guardian;
-  const regularAvailable = Math.max(cell.units - eliteAvailable - guardianAvailable, 0);
-  const total = cell.units;
-
-  let elite = Math.min(
-    eliteAvailable,
-    Math.round((eliteAvailable / total) * amount)
-  );
-  let guardian = Math.min(
-    guardianAvailable,
-    Math.round((guardianAvailable / total) * amount)
-  );
-
-  let regular = amount - elite - guardian;
-
-  if (regular < 0) {
-    const deficit = -regular;
-    if (guardian > deficit) {
-      guardian -= deficit;
-      regular = 0;
-    } else {
-      const remainingDeficit = deficit - guardian;
-      guardian = 0;
-      elite = Math.max(elite - remainingDeficit, 0);
-      regular = 0;
-    }
-  }
-
-  regular = Math.min(regular, regularAvailable);
-
-  let assigned = elite + guardian + regular;
-  if (assigned < amount) {
-    const extra = Math.min(amount - assigned, regularAvailable - regular);
-    regular += extra;
-    assigned = elite + guardian + regular;
-  }
-
-  if (assigned < amount) {
-    const remainingNeeded = amount - assigned;
-    const eliteRoom = eliteAvailable - elite;
-    const eliteTake = Math.min(remainingNeeded, eliteRoom);
-    elite += eliteTake;
-    assigned += eliteTake;
-  }
-
-  if (assigned < amount) {
-    const remainingNeeded = amount - assigned;
-    const guardianRoom = guardianAvailable - guardian;
-    const guardianTake = Math.min(remainingNeeded, guardianRoom);
-    guardian += guardianTake;
-    assigned += guardianTake;
-  }
-
-  regular = Math.max(amount - elite - guardian, 0);
-
-  return { regular, elite, guardian };
+function applyFortune(): number {
+  const deviation = 0.1;
+  const roll = Math.random() * deviation * 2 - deviation;
+  return 1 + roll;
 }
 
-function calculateAttackPower(
-  distribution: UnitDistribution,
-  specialization: BaseSpecialization
-): number {
-  const basePower =
-    distribution.regular +
-    distribution.elite * ELITE_ATTACK_MODIFIER +
-    distribution.guardian * GUARDIAN_ATTACK_MODIFIER;
-
-  if (distribution.regular + distribution.elite + distribution.guardian === 0) {
-    return 0;
-  }
-
-  if (specialization === "forge") {
-    return basePower * FORGE_ATTACK_BONUS;
-  }
-
-  if (specialization === "barracks") {
-    return basePower * 1.05;
-  }
-
-  return basePower;
+function calculatePower(units: Battalion[], mode: "attack" | "defense"): number {
+  return units.reduce((total, unit) => {
+    const stat = mode === "attack" ? unit.attack : unit.defense;
+    return total + stat * unit.soldiers;
+  }, 0);
 }
 
-function calculateDefensePower(defender: Cell): number {
-  const distribution = defender.specialUnits;
-  let power =
-    (defender.units - distribution.elite - distribution.guardian) +
-    distribution.elite * ELITE_DEFENSE_MODIFIER +
-    distribution.guardian * GUARDIAN_DEFENSE_MODIFIER;
-
-  if (
-    defender.type === "base" &&
-    defender.owner &&
-    defender.specialization === "sanctuary"
-  ) {
-    power *= SANCTUARY_DEFENSE_BONUS;
+function cleanupOwner(cell: Cell) {
+  if (cell.battalions.length === 0) {
+    cell.owner = null;
+  } else {
+    cell.owner = cell.battalions[0].owner;
   }
-
-  return power;
-}
-
-function resolveCombat(
-  attacker: Cell,
-  defender: Cell,
-  player: Player,
-  deployed: number,
-  distribution: UnitDistribution
-): Owner {
-  attacker.units -= deployed;
-  attacker.specialUnits.elite -= distribution.elite;
-  attacker.specialUnits.guardian -= distribution.guardian;
-  normalizeSpecialUnits(attacker);
-
-  if (defender.owner === player) {
-    defender.units += deployed;
-    defender.specialUnits.elite += distribution.elite;
-    defender.specialUnits.guardian += distribution.guardian;
-    normalizeSpecialUnits(defender);
-    return defender.owner;
-  }
-
-  const attackPower = calculateAttackPower(distribution, attacker.specialization);
-  const defensePower = calculateDefensePower(defender);
-
-  if (attackPower > defensePower) {
-    const casualtyRatio = defensePower / attackPower;
-    const survivorsCount = Math.max(
-      1,
-      Math.round(deployed * (1 - casualtyRatio))
-    );
-    const ratio = survivorsCount / deployed;
-    let eliteSurvivors = Math.min(
-      distribution.elite,
-      Math.round(distribution.elite * ratio)
-    );
-    let guardianSurvivors = Math.min(
-      distribution.guardian,
-      Math.round(distribution.guardian * ratio)
-    );
-    let regularSurvivors = survivorsCount - eliteSurvivors - guardianSurvivors;
-
-    if (regularSurvivors < 0) {
-      const deficit = -regularSurvivors;
-      if (guardianSurvivors >= deficit) {
-        guardianSurvivors -= deficit;
-      } else {
-        const remainingDeficit = deficit - guardianSurvivors;
-        guardianSurvivors = 0;
-        eliteSurvivors = Math.max(eliteSurvivors - remainingDeficit, 0);
-      }
-      regularSurvivors = 0;
-    }
-
-    defender.owner = player;
-    defender.units = survivorsCount;
-    defender.specialUnits = {
-      elite: eliteSurvivors,
-      guardian: guardianSurvivors,
-    };
-    normalizeSpecialUnits(defender);
-    return player;
-  }
-
-  const inflicted = Math.min(defender.units, Math.round(attackPower));
-  if (inflicted > 0) {
-    const totalDefenderUnits = defender.units || 1;
-    const eliteLosses = Math.min(
-      defender.specialUnits.elite,
-      Math.round((defender.specialUnits.elite / totalDefenderUnits) * inflicted)
-    );
-    const guardianLosses = Math.min(
-      defender.specialUnits.guardian,
-      Math.round(
-        (defender.specialUnits.guardian / totalDefenderUnits) * inflicted
-      )
-    );
-    let regularLosses = inflicted - eliteLosses - guardianLosses;
-    if (regularLosses < 0) {
-      regularLosses = 0;
-    }
-
-    defender.units = Math.max(0, defender.units - inflicted);
-    defender.specialUnits.elite = Math.max(
-      0,
-      defender.specialUnits.elite - eliteLosses
-    );
-    defender.specialUnits.guardian = Math.max(
-      0,
-      defender.specialUnits.guardian - guardianLosses
-    );
-
-    if (defender.units === 0) {
-      defender.owner = null;
-      defender.specialUnits.elite = 0;
-      defender.specialUnits.guardian = 0;
-    }
-  }
-
-  return defender.owner ?? null;
 }
 
 export function performMove(
   cells: Cell[],
   fromId: string,
   toId: string,
-  player: Player
+  player: Player,
+  battalionId: string
 ): { cells: Cell[]; lastAction: LastAction | undefined } {
-  const fromCell = getCell(cells, fromId);
-  const toCell = getCell(cells, toId);
+  const updated = cloneCells(cells);
+  const fromCell = updated.find((cell) => cell.id === fromId);
+  const toCell = updated.find((cell) => cell.id === toId);
 
   if (!fromCell || !toCell) {
     return { cells, lastAction: undefined };
   }
 
-  if (fromCell.owner !== player || fromCell.units < 2) {
+  const battalion = removeBattalion(fromCell, battalionId);
+  if (!battalion || battalion.owner !== player || battalion.movementLeft <= 0) {
     return { cells, lastAction: undefined };
   }
 
-  const path = findMovementPath(cells, fromCell, toCell, player, 3);
+  const path = findBattalionPath(cells, fromCell, toCell, battalion);
   if (!path) {
+    fromCell.battalions.push(battalion);
+    cleanupOwner(fromCell);
     return { cells, lastAction: undefined };
   }
 
-  const updated = cells.map((cell) => cloneCell(cell));
-  const fromIndex = getCellIndex(updated, fromId);
-  const toIndex = getCellIndex(updated, toId);
-  const attacker = updated[fromIndex];
-  const defender = updated[toIndex];
+  const conqueredOwner: Owner = toCell.owner;
 
-  const deployed = Math.max(1, Math.floor(attacker.units / 2));
-  const distribution = distributeUnits(attacker, deployed);
+  if (toCell.owner === player) {
+    battalion.movementLeft = Math.max(0, battalion.movementLeft - path.cost);
+    toCell.battalions.push(battalion);
+    cleanupOwner(fromCell);
+    cleanupOwner(toCell);
+    return {
+      cells: updated,
+      lastAction: {
+        fromId,
+        toId,
+        conqueredOwner: toCell.owner,
+        timestamp: Date.now(),
+        fortune: 1,
+      },
+    };
+  }
 
-  const conqueredOwner = resolveCombat(
-    attacker,
-    defender,
-    player,
-    deployed,
-    distribution
-  );
+  const defenders = [...toCell.battalions];
+  const attackers = [battalion];
+  let resourceReward = 0;
+
+  if (defenders.length === 0) {
+    battalion.movementLeft = 0;
+    toCell.owner = player;
+    toCell.battalions = [battalion];
+    if (toCell.type === "resource" && !toCell.resourceClaimedBy[player]) {
+      resourceReward = Math.floor(Math.random() * 3) + 1;
+      toCell.resourceClaimedBy[player] = true;
+    }
+    cleanupOwner(fromCell);
+    const fortune = applyFortune();
+    return {
+      cells: updated,
+      lastAction: {
+        fromId,
+        toId,
+        conqueredOwner,
+        timestamp: Date.now(),
+        fortune,
+        resourceReward: resourceReward || undefined,
+      },
+    };
+  }
+
+  const fortuneAttack = applyFortune();
+  const fortuneDefense = applyFortune();
+
+  const attackPower = calculatePower(attackers, "attack") * fortuneAttack;
+  const defensePower = calculatePower(defenders, "defense") * fortuneDefense;
+
+  let winner: Player | null = null;
+
+  if (attackPower > defensePower) {
+    winner = player;
+  } else {
+    winner = defenders[0]?.owner ?? null;
+  }
+
+  if (winner === player) {
+    const casualtyRatio = Math.min(1, defensePower / (attackPower || 1));
+    const survivors = Math.max(1, Math.round(battalion.soldiers * (1 - casualtyRatio)));
+    battalion.soldiers = survivors;
+    battalion.movementLeft = 0;
+    toCell.owner = player;
+    toCell.battalions = [battalion];
+    if (toCell.type === "resource" && !toCell.resourceClaimedBy[player]) {
+      resourceReward = Math.floor(Math.random() * 3) + 1;
+      toCell.resourceClaimedBy[player] = true;
+    }
+  } else {
+    const casualtyRatio = Math.min(1, attackPower / (defensePower || 1));
+    defenders.forEach((defender) => {
+      defender.soldiers = Math.max(1, Math.round(defender.soldiers * (1 - casualtyRatio / defenders.length)));
+      defender.movementLeft = defender.maxMovement;
+    });
+    toCell.battalions = defenders;
+    fromCell.battalions.push(battalion);
+    cleanupOwner(fromCell);
+  }
+
+  cleanupOwner(toCell);
 
   return {
     cells: updated,
@@ -293,19 +157,8 @@ export function performMove(
       toId,
       conqueredOwner,
       timestamp: Date.now(),
+      fortune: attackPower > defensePower ? fortuneAttack : fortuneDefense,
+      resourceReward: resourceReward || undefined,
     },
   };
-}
-
-export function previewAttackPower(cell: Cell): number {
-  if (cell.units < 2) {
-    return 0;
-  }
-  const deployed = Math.max(1, Math.floor(cell.units / 2));
-  const distribution = distributeUnits(cell, deployed);
-  return calculateAttackPower(distribution, cell.specialization);
-}
-
-export function previewDefensePower(cell: Cell): number {
-  return calculateDefensePower(cell);
 }

@@ -7,30 +7,45 @@ interface GameGridProps {
   cells: Cell[];
   gridSize: number;
   selectedCellId: string | null;
+  selectedBattalionId: string | null;
   lastAction?: LastAction;
   onCellClick: (cell: Cell) => void;
 }
 
-export function GameGrid({ cells, gridSize, selectedCellId, lastAction, onCellClick }: GameGridProps) {
+export function GameGrid({
+  cells,
+  gridSize,
+  selectedCellId,
+  selectedBattalionId,
+  lastAction,
+  onCellClick,
+}: GameGridProps) {
   const movementOverlay = useMemo(() => {
-    if (!selectedCellId) {
+    if (!selectedCellId || !selectedBattalionId) {
       return { active: false, reachable: new Set<string>() };
     }
 
     const selectedCell = cells.find((cell) => cell.id === selectedCellId);
-    if (!selectedCell || selectedCell.owner !== "player" || selectedCell.units < 2) {
+    if (!selectedCell) {
       return { active: false, reachable: new Set<string>() };
     }
 
-    const reachableCells = getReachableCells(cells, selectedCell, "player", 3);
-    const reachableIds = new Set(reachableCells.map((cell) => cell.id));
+    const battalion = selectedCell.battalions.find(
+      (unit) => unit.id === selectedBattalionId && unit.owner === "player" && unit.movementLeft > 0
+    );
+    if (!battalion) {
+      return { active: false, reachable: new Set<string>() };
+    }
+
+    const reachableCells = getReachableCells(cells, selectedCell, battalion);
+    const reachableIds = new Set(reachableCells.reachable.map((cell) => cell.id));
 
     if (reachableIds.size === 0) {
       return { active: false, reachable: reachableIds };
     }
 
     return { active: true, reachable: reachableIds };
-  }, [cells, selectedCellId]);
+  }, [cells, selectedBattalionId, selectedCellId]);
 
   return (
     <div
