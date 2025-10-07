@@ -83,6 +83,41 @@ export function canReachWithinMovement(
   return Boolean(findMovementPath(cells, from, to, player, maxSteps));
 }
 
+export function getReachableCells(
+  cells: Cell[],
+  from: Cell,
+  player: Player,
+  maxSteps = 3
+): Cell[] {
+  const visited = new Set<string>([from.id]);
+  const reachable = new Set<string>();
+  const queue: { cell: Cell; steps: number }[] = [{ cell: from, steps: 0 }];
+
+  while (queue.length > 0) {
+    const { cell, steps } = queue.shift()!;
+
+    if (steps >= maxSteps) {
+      continue;
+    }
+
+    for (const neighbor of getNeighbors(cells, cell)) {
+      const nextSteps = steps + 1;
+      if (nextSteps > maxSteps) {
+        continue;
+      }
+
+      reachable.add(neighbor.id);
+
+      if (neighbor.owner === player && !visited.has(neighbor.id)) {
+        visited.add(neighbor.id);
+        queue.push({ cell: neighbor, steps: nextSteps });
+      }
+    }
+  }
+
+  return cells.filter((cell) => reachable.has(cell.id));
+}
+
 export function calculateStats(cells: Cell[]): GameStats {
   const baseTotals: Record<Player, number> = { player: 0, ai: 0 };
   const resourceTotals: Record<Player, number> = { player: 0, ai: 0 };
