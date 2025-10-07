@@ -49,7 +49,7 @@ export function GameGrid({
 
   return (
     <div
-      className="grid w-full max-w-4xl gap-1.5 rounded-2xl bg-slate-900/60 p-2 shadow-lg backdrop-blur sm:gap-2 sm:p-3"
+      className="grid w-full max-w-4xl gap-0 overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/80 p-1.5 shadow-lg backdrop-blur"
       style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}
     >
       {cells.map((cell) => (
