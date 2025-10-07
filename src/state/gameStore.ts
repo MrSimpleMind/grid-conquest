@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { generateMap } from "../game/mapGenerator";
 import { runAiTurn } from "../game/ai";
-import { getAvailableBlueprints } from "../game/units";
+import { createBattalion, getAvailableBlueprints } from "../game/units";
 import { calculateStats, determineMajorityOwner, getCell } from "../game/utils";
 import { performMove } from "../game/performMove";
 import {
@@ -25,6 +25,7 @@ interface GameStoreState extends GameSnapshot {
   isHydrated: boolean;
   actions: {
     selectCell: (id: string) => void;
+    selectBattalion: (cellId: string, battalionId: string) => void;
     moveTo: (id: string) => void;
     endTurn: () => void;
     newGame: (size?: number) => void;
@@ -182,11 +183,35 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         set({ selectedCellId: null, selectedBattalionId: null });
         return;
       }
-      const battalion = listPlayerBattalions(cell, "player")[0] ?? null;
+      const battalions = listPlayerBattalions(cell, "player");
+      const battalion = battalions.find((unit) => unit.movementLeft > 0) ?? battalions[0] ?? null;
       const newSelectedId = state.selectedCellId === id ? null : id;
       set({
         selectedCellId: newSelectedId,
         selectedBattalionId: newSelectedId ? battalion?.id ?? null : null,
+      });
+    },
+    selectBattalion: (cellId: string, battalionId: string) => {
+      const state = get();
+      if (state.status !== "playing" || state.currentTurn !== "player") {
+        return;
+      }
+
+      const cell = getCell(state.cells, cellId);
+      if (!cell || cell.owner !== "player") {
+        return;
+      }
+
+      const battalion = listPlayerBattalions(cell, "player").find(
+        (unit) => unit.id === battalionId
+      );
+      if (!battalion) {
+        return;
+      }
+
+      set({
+        selectedCellId: cellId,
+        selectedBattalionId: battalion.id,
       });
     },
     clearSelection: () => set({ selectedCellId: null, selectedBattalionId: null }),
@@ -383,16 +408,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         return;
       }
 
-      const newUnit: Battalion = {
-        id: `${choice.type}-${Date.now()}`,
+      const newUnit = createBattalion({
         owner: "player",
         type: choice.type,
-        soldiers: blueprint.soldiers,
-        attack: blueprint.attack,
-        defense: blueprint.defense,
-        maxMovement: blueprint.movement,
-        movementLeft: blueprint.movement,
-      };
+        initialMovement: 0,
+      });
 
       const updatedCells = state.cells.map((candidate) =>
         candidate.id === cell.id

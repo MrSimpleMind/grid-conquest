@@ -24,7 +24,7 @@ function produceUnits(cells: Cell[], resources: Record<Player, number>): void {
   }
 
   const base = bases[Math.floor(Math.random() * bases.length)];
-  const newUnit = createBattalion({ owner: "ai", type: "infantry" });
+  const newUnit = createBattalion({ owner: "ai", type: "infantry", initialMovement: 0 });
   base.battalions.push(newUnit);
   resources.ai -= UNIT_BLUEPRINTS.infantry.cost;
 }
